@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-async function pickFile(): Promise<vscode.TextDocument>{
+async function pickFile(label:string): Promise<vscode.TextDocument>{
     const pickedFiles = await vscode.window.showOpenDialog({
         filters: {
           "All files (*.*)": ["*"],
@@ -8,7 +8,7 @@ async function pickFile(): Promise<vscode.TextDocument>{
         canSelectFolders: false,
         canSelectFiles: true,
         canSelectMany: false,
-        openLabel: "Select file with code from tutorial...",
+        openLabel: label,
       });
   
     if (!pickedFiles || pickedFiles.length < 1) {
@@ -28,7 +28,7 @@ export function activate(context: vscode.ExtensionContext) {
         const contextUriPath = context.globalState.get(editor.document.fileName)
         let tutorialCodeDocument: vscode.TextDocument;
         if(!contextUriPath || ignoreContextUriPath){
-            tutorialCodeDocument = await pickFile();
+            tutorialCodeDocument = await pickFile("Select file with code from tutorial...");
             if(!tutorialCodeDocument){
                 return
             }

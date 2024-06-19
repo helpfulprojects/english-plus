@@ -9,16 +9,19 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "*"
-  ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "english-plus.helloWorld",
+        "command": "english-plus.openCodeFromTutorial",
         "category": "EnglishPlus",
-        "title": "Hello World"
+        "title": "Select file with code from tutorial"
+      },
+      {
+        "command": "english-plus.changeSourceFile",
+        "category": "EnglishPlus",
+        "title": "Select different file with code from tutorial"
       }
     ]
   },

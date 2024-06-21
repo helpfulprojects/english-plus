@@ -76,32 +76,35 @@ export function activate(context: vscode.ExtensionContext) {
             
             definitionsMap.set(definition, replacement);
         }
+
+        //Inline completion for existing definitions. Comment with just code is added as regular text, comment with comment is added as snippet
+        vscode.languages.registerInlineCompletionItemProvider({ pattern: editor.document.fileName }, {
+            async provideInlineCompletionItems(document, position, context, token) {
+                const currentLine = document.lineAt(position.line)
+                const isCurrentLineComment = currentLine.text.startsWith(commentsStartWith,currentLine.firstNonWhitespaceCharacterIndex)
+                const lineTextLength = currentLine.text.substring(currentLine.firstNonWhitespaceCharacterIndex).length
+                if (!isCurrentLineComment || lineTextLength <= 1) {
+                    return;
+                }
+                let definitionsKeys = Array.from( definitionsMap.keys() )
+                let lineCompletions: vscode.InlineCompletionItem[] = definitionsKeys.map(key=>{
+                    const isSnippet = key.includes('$')
+                    
+                    return {
+                        insertText: isSnippet? new vscode.SnippetString(key):key,
+                        range: new vscode.Range(position.line, 0, position.line, currentLine.text.length)
+                    }
+                    //maybe check if I can listen on tab completion?
+                });;
+                return lineCompletions;
+            }
+        });
 	}));
 
     context.subscriptions.push(vscode.commands.registerCommand('english-plus.changeSourceFile', async () => {
         vscode.commands.executeCommand('english-plus.openCodeFromTutorial',true)
 	}));
 
-    //Inline completion for existing definitions. Comment with just code is added as regular text, comment with comment is added as snippet
-    vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, {
-        async provideInlineCompletionItems(document, position, context, token) {
-            const currentLine = document.lineAt(position.line)
-            const isCurrentLineComment = currentLine.text.startsWith(commentsStartWith,currentLine.firstNonWhitespaceCharacterIndex)
-			if (!isCurrentLineComment) {
-				return;
-			}
-            let definitionsKeys = Array.from( definitionsMap.keys() )
-			let lineCompletions: vscode.InlineCompletionItem[] = definitionsKeys.map(key=>{
-                const isSnippet = key.includes('$')
-                
-                return {
-                    insertText: isSnippet? new vscode.SnippetString(key):key,
-                    range: new vscode.Range(position.line, 0, position.line, currentLine.text.length)
-                }
-             });;
-			return lineCompletions;
-		}
-    });
 }
 
 export function deactivate() {}

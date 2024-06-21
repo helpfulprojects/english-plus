@@ -57,9 +57,11 @@ export function activate(context: vscode.ExtensionContext) {
             let replacement = currentLine.text.substring(currentLine.firstNonWhitespaceCharacterIndex)
             if(isCurrentLineComment){
                 let definitionArguments: string[] = []
-                definition = definition.replace(/\((.*?)\)/g, (argumentIdentifier) => {
-                    definitionArguments.push(argumentIdentifier)
-                    return "()";
+                let argumentsCount = 0;
+                definition = definition.replace(/\((.*?)\)/g, (match,argumentIdentifier) => {
+                    argumentsCount++;
+                    definitionArguments.push(match)
+                    return `(\${${argumentsCount}:${argumentIdentifier}})`;
                 });
                 definition = definition.toLowerCase()
                 definitionArguments.forEach((argumentIdentifier, index) => {
@@ -73,12 +75,58 @@ export function activate(context: vscode.ExtensionContext) {
             }
             
             definitionsMap.set(definition, replacement);
+            console.log(definitionsMap)
         }
 	}));
 
     context.subscriptions.push(vscode.commands.registerCommand('english-plus.changeSourceFile', async () => {
         vscode.commands.executeCommand('english-plus.openCodeFromTutorial',true)
 	}));
+
+    //Inline completion for existing definitions. Comment with just code is added as regular text, comment with comment is added as snippet
+    vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, {
+        async provideInlineCompletionItems(document, position, context, token) {
+			const regexp = /\/\/ \[(.+?),(.+?)\)(.*?):(.*)/;
+			if (position.line <= 0) {
+				return;
+			}
+
+			const result: vscode.InlineCompletionItem[] = [];
+
+			let offset = 1;
+			while (offset > 0) {
+				if (position.line - offset < 0) {
+					break;
+				}
+				
+				const lineBefore = document.lineAt(position.line - offset).text;
+				const matches = lineBefore.match(regexp);
+				if (!matches) {
+					break;
+				}
+				offset++;
+
+				const start = matches[1];
+				const startInt = parseInt(start, 10);
+				const end = matches[2];
+				const endInt =
+					end === '*'
+						? document.lineAt(position.line).text.length
+						: parseInt(end, 10);
+				const flags = matches[3];
+				const completeBracketPairs = flags.includes('b');
+				const isSnippet = flags.includes('s');
+				const text = matches[4].replace(/\\n/g, '\n');
+
+				result.push({
+					insertText: isSnippet ? new vscode.SnippetString(text) : text,
+					range: new vscode.Range(position.line, startInt, position.line, endInt)
+				});
+			}
+
+			return result;
+		}
+    });
 }
 
 export function deactivate() {}

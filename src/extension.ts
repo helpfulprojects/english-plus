@@ -89,20 +89,27 @@ export function activate(context: vscode.ExtensionContext) {
                 let definitionsKeys = Array.from( definitionsMap.keys() )
                 let lineCompletions: vscode.InlineCompletionItem[] = definitionsKeys.map(key=>{
                     const isSnippet = key.includes('$')
-                    
-                    return {
-                        insertText: isSnippet? new vscode.SnippetString(key):key,
-                        range: new vscode.Range(position.line, 0, position.line, currentLine.text.length)
-                    }
-                    //maybe check if I can listen on tab completion?
-                });;
+                    return new vscode.InlineCompletionItem(
+                        isSnippet? new vscode.SnippetString(key):key,new vscode.Range(position.line, 0, position.line, currentLine.text.length))
+                });
                 return lineCompletions;
             }
         });
+
+        // vscode.languages.setLanguageConfiguration(editor.document.languageId,{
+        //     onEnterRules: [
+        //         {
+        //             action: {
+        //                 indentAction: vscode.IndentAction.None
+        //             },
+        //             beforeText: {}
+        //         }
+        //     ]
+        // })
 	}));
 
     context.subscriptions.push(vscode.commands.registerCommand('english-plus.changeSourceFile', async () => {
-        vscode.commands.executeCommand('english-plus.openCodeFromTutorial',true)
+        vscode.commands.executeCommand('english-plus.openCodeFromTutorial',true);
 	}));
 
 }

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-let definitionsMap: Map<string,string>;
+let definitionsMap: Map<string,{snippetString:vscode.SnippetString | undefined,replacement:string}>;
 const registeredProbiders = new Map<string,vscode.Disposable>();
 const commentsStartWith = "#"
 
@@ -40,7 +40,7 @@ export function activate(context: vscode.ExtensionContext) {
         }else{
             tutorialCodeDocument = await vscode.workspace.openTextDocument(contextUriPath);
         }
-        definitionsMap = new Map<string,string>();
+        definitionsMap = new Map<string,{snippetString:vscode.SnippetString,replacement:string}>();
 
         for(let line = 1; line < tutorialCodeDocument.lineCount; line++){
             const previousLine = tutorialCodeDocument.lineAt(line-1) 
@@ -54,17 +54,20 @@ export function activate(context: vscode.ExtensionContext) {
             if(!isPreviousLineComment){
                 continue;
             }
-            let definition = previousLine.text.substring(previousLine.firstNonWhitespaceCharacterIndex)
+            let comment = previousLine.text.substring(previousLine.firstNonWhitespaceCharacterIndex).toLocaleLowerCase()
             let replacement = currentLine.text.substring(currentLine.firstNonWhitespaceCharacterIndex)
+            let snippetString: vscode.SnippetString | undefined;
             if(isCurrentLineComment){
                 let definitionArguments: string[] = []
                 let argumentsCount = 0;
-                definition = definition.replace(/\((.*?)\)/g, (match,argumentIdentifier) => {
+                snippetString = new vscode.SnippetString(comment.replace(/\((.*?)\)/g, (match,argumentIdentifier) => {
                     argumentsCount++;
                     definitionArguments.push(match)
                     return `(\${${argumentsCount}:${argumentIdentifier}})`;
+                }));
+                comment = comment.replace(/\((.*?)\)/g, (_) => {
+                    return `()`;
                 });
-                definition = definition.toLowerCase()
                 definitionArguments.forEach((argumentIdentifier, index) => {
                     replacement = replacement.replaceAll(argumentIdentifier, "~(~" + index + "~)~");
                 });
@@ -75,7 +78,7 @@ export function activate(context: vscode.ExtensionContext) {
                 continue;
             }
             
-            definitionsMap.set(definition, replacement);
+            definitionsMap.set(comment,{snippetString, replacement});
         }
 
         if(registeredProbiders.has(editor.document.fileName)){
@@ -91,12 +94,12 @@ export function activate(context: vscode.ExtensionContext) {
                 if (!isCurrentLineComment || lineTextLength <= 1) {
                     return;
                 }
-                let definitionsKeys = Array.from( definitionsMap.keys() )
-                let lineCompletions: vscode.InlineCompletionItem[] = definitionsKeys.map(key=>{
-                    const isSnippet = key.includes('$')
-                    return new vscode.InlineCompletionItem(
-                        isSnippet? new vscode.SnippetString(key):key,new vscode.Range(position.line, 0, position.line, currentLine.text.length))
-                });
+                let lineCompletions: vscode.InlineCompletionItem[] = [];
+                definitionsMap.forEach((value, key) => {
+                    lineCompletions.push(new vscode.InlineCompletionItem(
+                        value.snippetString ? value.snippetString : key, new vscode.Range(position.line, 0, position.line, currentLine.text.length) 
+                    ))
+                })
                 return lineCompletions;
             }
         });
@@ -114,7 +117,6 @@ export function activate(context: vscode.ExtensionContext) {
         const changedLineNumber = event.contentChanges[0].range.start.line+1;
         const commentLineAbove = event.document.lineAt(changedLineNumber-2);
         const emptyLineAbove = event.document.lineAt(changedLineNumber-1);
-        const currentLine = event.document.lineAt(changedLineNumber);
         //We are looking for when enter is pressed, line above is empty and line above that is a comment
         if(
             event.contentChanges[0].text == '\n' && 

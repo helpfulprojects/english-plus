@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 let definitionsMap: Map<string,string>;
+const registeredProbiders = new Map<string,vscode.Disposable>();
 const commentsStartWith = "#"
 
 async function pickFile(label:string): Promise<vscode.TextDocument|undefined>{
@@ -77,8 +78,12 @@ export function activate(context: vscode.ExtensionContext) {
             definitionsMap.set(definition, replacement);
         }
 
+        if(registeredProbiders.has(editor.document.fileName)){
+            registeredProbiders.get(editor.document.fileName)?.dispose()
+        }
+
         //Inline completion for existing definitions. Comment with just code is added as regular text, comment with comment is added as snippet
-        vscode.languages.registerInlineCompletionItemProvider({ pattern: editor.document.fileName }, {
+        let disposable = vscode.languages.registerInlineCompletionItemProvider({ pattern: editor.document.fileName }, {
             async provideInlineCompletionItems(document, position, context, token) {
                 const currentLine = document.lineAt(position.line)
                 const isCurrentLineComment = currentLine.text.startsWith(commentsStartWith,currentLine.firstNonWhitespaceCharacterIndex)
@@ -95,18 +100,33 @@ export function activate(context: vscode.ExtensionContext) {
                 return lineCompletions;
             }
         });
-
-        // vscode.languages.setLanguageConfiguration(editor.document.languageId,{
-        //     onEnterRules: [
-        //         {
-        //             action: {
-        //                 indentAction: vscode.IndentAction.None
-        //             },
-        //             beforeText: {}
-        //         }
-        //     ]
-        // })
+        registeredProbiders.set(editor.document.fileName,disposable)
 	}));
+
+    vscode.workspace.onDidChangeTextDocument(event=>{
+        if(!registeredProbiders.has(event.document.fileName)){
+            return;
+        }
+        const editor = vscode.window.activeTextEditor;
+        if(!editor){
+            return
+        }
+        const changedLineNumber = event.contentChanges[0].range.start.line+1;
+        const commentLineAbove = event.document.lineAt(changedLineNumber-2);
+        const emptyLineAbove = event.document.lineAt(changedLineNumber-1);
+        const currentLine = event.document.lineAt(changedLineNumber);
+        //We are looking for when enter is pressed, line above is empty and line above that is a comment
+        if(
+            event.contentChanges[0].text == '\n' && 
+            changedLineNumber-2>0 &&
+            commentLineAbove.text.startsWith(commentsStartWith,commentLineAbove.firstNonWhitespaceCharacterIndex) &&
+            emptyLineAbove.isEmptyOrWhitespace
+        ){
+            editor.edit(editBuilder => {
+				editBuilder.replace(emptyLineAbove.range, "test");
+			});
+        }
+    })
 
     context.subscriptions.push(vscode.commands.registerCommand('english-plus.changeSourceFile', async () => {
         vscode.commands.executeCommand('english-plus.openCodeFromTutorial',true);

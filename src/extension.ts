@@ -91,7 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
                 const currentLine = document.lineAt(position.line)
                 const isCurrentLineComment = currentLine.text.startsWith(commentsStartWith,currentLine.firstNonWhitespaceCharacterIndex)
                 const lineTextLength = currentLine.text.substring(currentLine.firstNonWhitespaceCharacterIndex).length
-                if (!isCurrentLineComment || lineTextLength <= 1) {
+                if (!isCurrentLineComment || lineTextLength <= 1 || position.isBefore(currentLine.range.end)) {
                     return;
                 }
                 let lineCompletions: vscode.InlineCompletionItem[] = [];
@@ -117,15 +117,24 @@ export function activate(context: vscode.ExtensionContext) {
         const changedLineNumber = event.contentChanges[0].range.start.line+1;
         const commentLineAbove = event.document.lineAt(changedLineNumber-2);
         const emptyLineAbove = event.document.lineAt(changedLineNumber-1);
+        const currentLine = event.document.lineAt(changedLineNumber);
         //We are looking for when enter is pressed, line above is empty and line above that is a comment
         if(
             event.contentChanges[0].text == '\n' && 
             changedLineNumber-2>0 &&
             commentLineAbove.text.startsWith(commentsStartWith,commentLineAbove.firstNonWhitespaceCharacterIndex) &&
-            emptyLineAbove.isEmptyOrWhitespace
+            emptyLineAbove.isEmptyOrWhitespace &&
+            currentLine.isEmptyOrWhitespace
         ){
+            const comment = commentLineAbove.text.trim().replace(/\((.*?)\)/g, (_) => {
+                return `()`;
+            });
+            const replacement = definitionsMap.get(comment)?.replacement;
+            if(!replacement){
+                return
+            }
             editor.edit(editBuilder => {
-				editBuilder.replace(emptyLineAbove.range, "test");
+				editBuilder.replace(emptyLineAbove.range, replacement);
 			});
         }
     })

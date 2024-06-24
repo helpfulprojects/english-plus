@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 
-let definitionsMap: Map<string,{snippetString:vscode.SnippetString | undefined,replacement:string}>;
+type CodeDefinition = {snippetString:vscode.SnippetString | undefined,replacement:string}
+
+let definitionsMap: Map<string,CodeDefinition>;
 const registeredProbiders = new Map<string,vscode.Disposable>();
 const commentsStartWith = "#"
 
@@ -40,7 +42,7 @@ export function activate(context: vscode.ExtensionContext) {
         }else{
             tutorialCodeDocument = await vscode.workspace.openTextDocument(contextUriPath);
         }
-        definitionsMap = new Map<string,{snippetString:vscode.SnippetString,replacement:string}>();
+        definitionsMap = new Map<string,CodeDefinition>();
 
         for(let line = 1; line < tutorialCodeDocument.lineCount; line++){
             const previousLine = tutorialCodeDocument.lineAt(line-1) 
@@ -57,13 +59,13 @@ export function activate(context: vscode.ExtensionContext) {
             let comment = previousLine.text.substring(previousLine.firstNonWhitespaceCharacterIndex).toLocaleLowerCase()
             let replacement = currentLine.text.substring(currentLine.firstNonWhitespaceCharacterIndex)
             let snippetString: vscode.SnippetString | undefined;
+            let argCount = 0
             if(isCurrentLineComment){
                 let definitionArguments: string[] = []
-                let argumentsCount = 0;
                 snippetString = new vscode.SnippetString(comment.replace(/\((.*?)\)/g, (match,argumentIdentifier) => {
-                    argumentsCount++;
+                    argCount++;
                     definitionArguments.push(match)
-                    return `(\${${argumentsCount}:${argumentIdentifier}})`;
+                    return `(\${${argCount}:${argumentIdentifier}})`;
                 }));
                 comment = comment.replace(/\((.*?)\)/g, (_) => {
                     return `()`;
@@ -114,22 +116,33 @@ export function activate(context: vscode.ExtensionContext) {
         if(!editor){
             return
         }
-        const changedLineNumber = event.contentChanges[0].range.start.line+1;
-        const commentLineAbove = event.document.lineAt(changedLineNumber-2);
-        const emptyLineAbove = event.document.lineAt(changedLineNumber-1);
-        const currentLine = event.document.lineAt(changedLineNumber);
+        const changedLineNumber = event.contentChanges[0].range.start.line;
+        const commentLineAbove = event.document.lineAt(changedLineNumber-1);
+        const emptyLineAbove = event.document.lineAt(changedLineNumber);
+        const currentLine = event.document.lineAt(changedLineNumber+1);
         //We are looking for when enter is pressed, line above is empty and line above that is a comment
         if(
             event.contentChanges[0].text == '\n' && 
-            changedLineNumber-2>0 &&
+            changedLineNumber-1>=0 &&
             commentLineAbove.text.startsWith(commentsStartWith,commentLineAbove.firstNonWhitespaceCharacterIndex) &&
             emptyLineAbove.isEmptyOrWhitespace &&
             currentLine.isEmptyOrWhitespace
         ){
-            const comment = commentLineAbove.text.trim().replace(/\((.*?)\)/g, (_) => {
+            const argumentsIdentifier: string[] = []
+            const comment = commentLineAbove.text.trim().replace(/\((.*?)\)/g, (_,argumentIdentifier) => {
+                argumentsIdentifier.push(argumentIdentifier)
                 return `()`;
             });
-            const replacement = definitionsMap.get(comment)?.replacement;
+            const definition = definitionsMap.get(comment)
+            if(!definition){
+                return;
+            }
+            let replacement = definition.replacement;
+            if(definition.snippetString){
+                argumentsIdentifier.forEach((argument,index)=>{
+                    replacement = replacement.replaceAll(`~(~${index}~)~`,argument);
+                })
+            }
             if(!replacement){
                 return
             }

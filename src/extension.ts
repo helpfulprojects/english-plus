@@ -5,6 +5,7 @@ type CodeDefinition = {snippetString:vscode.SnippetString | undefined,replacemen
 let definitionsMap: Map<string,CodeDefinition>;
 const registeredProbiders = new Map<string,vscode.Disposable>();
 const commentsStartWith = "#"
+const passOnResultSymbol = "_"
 
 async function pickFile(label:string): Promise<vscode.TextDocument|undefined>{
     const pickedFiles = await vscode.window.showOpenDialog({
@@ -23,6 +24,66 @@ async function pickFile(label:string): Promise<vscode.TextDocument|undefined>{
     const pickedFile = pickedFiles[0];
     const textDocument = await vscode.workspace.openTextDocument(pickedFile);
     return textDocument
+}
+
+function isLineAComment(line:vscode.TextLine){
+    return line.text.startsWith(commentsStartWith,line.firstNonWhitespaceCharacterIndex)
+}
+
+function getComments(document:vscode.TextDocument,startingLine: vscode.TextLine){
+    let currentLine = startingLine;
+    const comments: vscode.TextLine[] = [];
+    while(isLineAComment(currentLine)){
+        comments.unshift(currentLine)
+        if(currentLine.lineNumber-1<0){
+            break;
+        }
+        currentLine = document.lineAt(currentLine.lineNumber-1)
+    }
+    return comments;
+}
+
+function commentToReplacement(comment:vscode.TextLine, previousResult?: string){
+    const argumentsIdentifier: string[] = []
+    const identifier = comment.text.trim().replace(/\((.*?)\)/g, (_,argumentIdentifier) => {
+        argumentsIdentifier.push(argumentIdentifier)
+        return `()`;
+    });
+    const definition = definitionsMap.get(identifier)
+    if(!definition){
+        return;
+    }
+    let replacement = definition.replacement;
+    if(definition.snippetString){
+        argumentsIdentifier.forEach((argument,index)=>{
+            if(argument == passOnResultSymbol && previousResult){
+                argument = previousResult
+            }else if(argument == passOnResultSymbol && !previousResult){
+                return;
+            }
+            replacement = replacement.replaceAll(`~(~${index}~)~`,argument);
+        })
+    }
+    if(!replacement){
+        return
+    }
+    return replacement
+}
+
+function getReplacement(comments: vscode.TextLine[]){
+    let replacement: string | undefined;
+    for(let i=0;i<comments.length;i++){
+        if(replacement){
+            replacement = commentToReplacement(comments[i],replacement)
+        }else{
+            replacement = commentToReplacement(comments[i])
+        }
+        if(!replacement){
+            return
+        }
+    }
+    replacement = comments[0].text.substring(0,comments[0].firstNonWhitespaceCharacterIndex) + replacement;
+    return replacement;
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -94,7 +155,7 @@ export function activate(context: vscode.ExtensionContext) {
                 const currentLine = document.lineAt(position.line)
                 const isCurrentLineComment = currentLine.text.startsWith(commentsStartWith,currentLine.firstNonWhitespaceCharacterIndex)
                 const lineTextLength = currentLine.text.substring(currentLine.firstNonWhitespaceCharacterIndex).length
-                if (!isCurrentLineComment || lineTextLength <= 1 || position.isBefore(currentLine.range.end)) {
+                if (!isCurrentLineComment || lineTextLength <= 1 || position.character==0) {
                     return;
                 }
                 let lineCompletions: vscode.InlineCompletionItem[] = [];
@@ -117,37 +178,24 @@ export function activate(context: vscode.ExtensionContext) {
         if(!editor){
             return
         }
+        const document = editor.document
         const changedLineNumber = event.contentChanges[0].range.start.line;
-        const commentLineAbove = event.document.lineAt(changedLineNumber-1);
-        const emptyLineAbove = event.document.lineAt(changedLineNumber);
-        const currentLine = event.document.lineAt(changedLineNumber+1);
+        const emptyLineAbove = document.lineAt(changedLineNumber);
+        const currentLine = document.lineAt(changedLineNumber+1);
         //We are looking for when enter is pressed, line above is empty and line above that is a comment
         if(
             event.contentChanges[0].text.replace(/ /g,'') == '\n' && 
-            changedLineNumber-1>=0 &&
-            commentLineAbove.text.startsWith(commentsStartWith,commentLineAbove.firstNonWhitespaceCharacterIndex) &&
             emptyLineAbove.isEmptyOrWhitespace &&
             currentLine.isEmptyOrWhitespace
         ){
-            const argumentsIdentifier: string[] = []
-            const comment = commentLineAbove.text.trim().replace(/\((.*?)\)/g, (_,argumentIdentifier) => {
-                argumentsIdentifier.push(argumentIdentifier)
-                return `()`;
-            });
-            const definition = definitionsMap.get(comment)
-            if(!definition){
+            const comments = getComments(document,document.lineAt(changedLineNumber-1));
+            if(comments.length < 1){
                 return;
             }
-            let replacement = definition.replacement;
-            if(definition.snippetString){
-                argumentsIdentifier.forEach((argument,index)=>{
-                    replacement = replacement.replaceAll(`~(~${index}~)~`,argument);
-                })
-            }
+            const replacement = getReplacement(comments);
             if(!replacement){
-                return
+                return;
             }
-            replacement = commentLineAbove.text.substring(0,commentLineAbove.firstNonWhitespaceCharacterIndex) + replacement;
             editor.edit(editBuilder => {
 				editBuilder.replace(emptyLineAbove.range, replacement);
 			});

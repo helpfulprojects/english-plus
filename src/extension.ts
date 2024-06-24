@@ -73,6 +73,7 @@ export function activate(context: vscode.ExtensionContext) {
                 definitionArguments.forEach((argumentIdentifier, index) => {
                     replacement = replacement.replaceAll(argumentIdentifier, "~(~" + index + "~)~");
                 });
+                replacement = replacement.replace(commentsStartWith,'').trim()
                 line++;
             }else if(isCurrentLineCode){
                 line++;    

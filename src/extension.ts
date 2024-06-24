@@ -123,7 +123,7 @@ export function activate(context: vscode.ExtensionContext) {
         const currentLine = event.document.lineAt(changedLineNumber+1);
         //We are looking for when enter is pressed, line above is empty and line above that is a comment
         if(
-            event.contentChanges[0].text == '\n' && 
+            event.contentChanges[0].text.replace(/ /g,'') == '\n' && 
             changedLineNumber-1>=0 &&
             commentLineAbove.text.startsWith(commentsStartWith,commentLineAbove.firstNonWhitespaceCharacterIndex) &&
             emptyLineAbove.isEmptyOrWhitespace &&
@@ -147,6 +147,7 @@ export function activate(context: vscode.ExtensionContext) {
             if(!replacement){
                 return
             }
+            replacement = commentLineAbove.text.substring(0,commentLineAbove.firstNonWhitespaceCharacterIndex) + replacement;
             editor.edit(editBuilder => {
 				editBuilder.replace(emptyLineAbove.range, replacement);
 			});

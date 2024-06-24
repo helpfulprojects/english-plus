@@ -100,7 +100,7 @@ export function activate(context: vscode.ExtensionContext) {
                 let lineCompletions: vscode.InlineCompletionItem[] = [];
                 definitionsMap.forEach((value, key) => {
                     lineCompletions.push(new vscode.InlineCompletionItem(
-                        value.snippetString ? value.snippetString : key, new vscode.Range(position.line, 0, position.line, currentLine.text.length) 
+                        value.snippetString ? value.snippetString : key, new vscode.Range(position.line, currentLine.firstNonWhitespaceCharacterIndex, position.line, currentLine.text.length) 
                     ))
                 })
                 return lineCompletions;

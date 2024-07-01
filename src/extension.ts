@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 
 type CodeDefinition = {snippetString:vscode.SnippetString | undefined,replacement:string}
 
 let definitionsMap: Map<string,CodeDefinition>;
 const registeredProbiders = new Map<string,vscode.Disposable>();
-const commentsStartWith = "#"
+let commentsStartWith = "";
 const passOnResultSymbol = "_"
 
 async function pickFile(label:string): Promise<vscode.TextDocument|undefined>{
@@ -45,7 +46,8 @@ function getComments(document:vscode.TextDocument,startingLine: vscode.TextLine)
 
 function commentToReplacement(comment:vscode.TextLine, previousResult?: string){
     const argumentsIdentifier: string[] = []
-    const identifier = comment.text.trim().replace(/\((.*?)\)/g, (_,argumentIdentifier) => {
+    let commentCleanup = initialLineCleanup(comment)
+    const identifier = commentCleanup.replace(/\((.*?)\)/g, (_,argumentIdentifier) => {
         argumentsIdentifier.push(argumentIdentifier)
         return `()`;
     });
@@ -81,17 +83,50 @@ function getReplacement(comments: vscode.TextLine[]){
         if(!replacement){
             return
         }
+        replacement = replacement.replace(commentsStartWith,"")
     }
     replacement = comments[0].text.substring(0,comments[0].firstNonWhitespaceCharacterIndex) + replacement;
     return replacement;
 }
 
+function initialLineCleanup(line:vscode.TextLine){
+    let result = line.text.replace(/^[ \f\t\v]+/,"").replace(/[ \f\t\v]+$/,"")
+    if(isLineAComment(line)){
+        result = result.replace(new RegExp(`${commentsStartWith} *`),"")
+        result = commentsStartWith+result;
+    }
+    return result;
+}
+
 export function activate(context: vscode.ExtensionContext) {
-	context.subscriptions.push(vscode.commands.registerCommand('english-plus.openCodeFromTutorial', async (ignoreContextUriPath: boolean = false) => {
+    context.subscriptions.push(vscode.commands.registerCommand('english-plus.openCodeFromTutorial', async (ignoreContextUriPath: boolean = false) => {
         const editor = vscode.window.activeTextEditor;
         if(!editor){
             return
         }
+
+        for (let extension of vscode.extensions.all) {
+            let packageJSON = extension.packageJSON;
+            if (packageJSON.contributes && packageJSON.contributes.languages) {
+                for (let language of packageJSON.contributes.languages) {
+                    if (language.configuration) {
+                        let configPath = path.join(extension.extensionPath, language.configuration);
+                        console.log(language.id, configPath)
+                        if(language.id == editor.document.languageId){
+                            const configForLanguage = await vscode.workspace.openTextDocument(configPath)
+                            const configJson = JSON.parse(configForLanguage.getText())
+                            commentsStartWith = configJson.comments.lineComment;
+                        }
+                    }
+                }
+            }
+        }
+
+        if(!commentsStartWith){
+            throw "Current programming language not supported. Stay tuned for future updates. To increase the priority for adding this language, comment somewhere the lack of support."
+        }
+
+        // Select file with code from tutorial
         const contextUriPath = context.globalState.get(editor.document.fileName)
         let tutorialCodeDocument: vscode.TextDocument | undefined;
         if(!contextUriPath || ignoreContextUriPath){
@@ -103,6 +138,7 @@ export function activate(context: vscode.ExtensionContext) {
         }else{
             tutorialCodeDocument = await vscode.workspace.openTextDocument(contextUriPath);
         }
+        // Extract all the definitions from the file
         definitionsMap = new Map<string,CodeDefinition>();
 
         for(let line = 1; line < tutorialCodeDocument.lineCount; line++){
@@ -111,14 +147,16 @@ export function activate(context: vscode.ExtensionContext) {
             //we are looking for two types lines
             //line with code and comment above it
             //line with a comment with a comment above it
-            const isPreviousLineComment = previousLine.text.startsWith(commentsStartWith,previousLine.firstNonWhitespaceCharacterIndex)
-            const isCurrentLineComment = currentLine.text.startsWith(commentsStartWith,currentLine.firstNonWhitespaceCharacterIndex)
+            const isPreviousLineComment = isLineAComment(previousLine) 
+            const isCurrentLineComment = isLineAComment(currentLine) 
             const isCurrentLineCode = !isCurrentLineComment && !currentLine.isEmptyOrWhitespace
             if(!isPreviousLineComment){
                 continue;
             }
-            let comment = previousLine.text.substring(previousLine.firstNonWhitespaceCharacterIndex).toLocaleLowerCase()
-            let replacement = currentLine.text.substring(currentLine.firstNonWhitespaceCharacterIndex)
+
+            let comment = initialLineCleanup(previousLine).toLowerCase();
+            let replacement = initialLineCleanup(currentLine);
+
             let snippetString: vscode.SnippetString | undefined;
             let argCount = 0
             if(isCurrentLineComment){
@@ -134,7 +172,6 @@ export function activate(context: vscode.ExtensionContext) {
                 definitionArguments.forEach((argumentIdentifier, index) => {
                     replacement = replacement.replaceAll(argumentIdentifier, "~(~" + index + "~)~");
                 });
-                replacement = replacement.replace(commentsStartWith,'').trim()
                 line++;
             }else if(isCurrentLineCode){
                 line++;    
@@ -149,11 +186,11 @@ export function activate(context: vscode.ExtensionContext) {
             registeredProbiders.get(editor.document.fileName)?.dispose()
         }
 
-        //Inline completion for existing definitions. Comment with just code is added as regular text, comment with comment is added as snippet
+        //Auto completion for writing in english plus
         let disposable = vscode.languages.registerInlineCompletionItemProvider({ pattern: editor.document.fileName }, {
             async provideInlineCompletionItems(document, position, context, token) {
                 const currentLine = document.lineAt(position.line)
-                const isCurrentLineComment = currentLine.text.startsWith(commentsStartWith,currentLine.firstNonWhitespaceCharacterIndex)
+                const isCurrentLineComment = isLineAComment(currentLine)
                 const lineTextLength = currentLine.text.substring(currentLine.firstNonWhitespaceCharacterIndex).length
                 if (!isCurrentLineComment || lineTextLength <= 1 || position.character==0) {
                     return;
@@ -170,6 +207,7 @@ export function activate(context: vscode.ExtensionContext) {
         registeredProbiders.set(editor.document.fileName,disposable)
 	}));
 
+    //Paste translation of a comment bellow it
     vscode.workspace.onDidChangeTextDocument(event=>{
         if(!registeredProbiders.has(event.document.fileName)){
             return;
@@ -196,6 +234,7 @@ export function activate(context: vscode.ExtensionContext) {
             if(!replacement){
                 return;
             }
+            
             editor.edit(editBuilder => {
 				editBuilder.replace(emptyLineAbove.range, replacement);
 			});

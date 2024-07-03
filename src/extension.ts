@@ -111,7 +111,6 @@ export function activate(context: vscode.ExtensionContext) {
                 for (let language of packageJSON.contributes.languages) {
                     if (language.configuration) {
                         let configPath = path.join(extension.extensionPath, language.configuration);
-                        console.log(language.id, configPath)
                         if(language.id == editor.document.languageId){
                             const configForLanguage = await vscode.workspace.openTextDocument(configPath)
                             const configJson = JSON.parse(configForLanguage.getText())

@@ -2,12 +2,21 @@
   "name": "english-plus",
   "displayName": "English as your first programming language",
   "description": "English plus offers training wheels for learning any programming language",
-  "version": "0.0.1",
+  "icon": "assets/icon.png",
+  "publisher": "debugdomain",
+  "author": {
+    "name": "Debug Domain"
+  },
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.90.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/helpfulprojects/english-plus.git"
+  },
   "categories": [
-    "Other"
+    "Formatters"
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
